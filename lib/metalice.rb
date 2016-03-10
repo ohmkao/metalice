@@ -1,13 +1,78 @@
+require "meta_tags"
+require "metalice/selector"
+
 module Metalice
 
-  def render *args
-    if render_except(args)
-      method_name = meta_select_method_name
-      set_meta( method_name ? send(method_name) : { :title => page_title_use } )
-    end
-    super
+  class << self
+    attr_accessor :perform_method
   end
 
+  # =======================
+
+  def metalice_perform(*args)
+    meta_hash ||= {}
+    meta_hash.merge! use_metalice_meta(args)
+    meta_hash.merge! use_metalice_title(args)
+    set_meta meta_hash
+  end
+
+  # =======================
+  def get_hash_opt(get_name_arg, args)
+    args.last.class.name == "Hash" ? args.last.fetch(get_name_arg, nil) : nil
+  end
+
+  # =======================
+  def use_metalice_meta(args)
+    # 1. 排除項目
+    # TODO
+
+    # 2. 黑名單
+    return {} if block_check?
+
+    # 3. 選擇 method
+    meta_method_name ||= (get_hash_opt(:metalice_method, args) || meta_select_method_name)
+    return send(meta_method_name) if meta_method_name
+
+    {}
+  end
+
+  def use_metalice_title(args)
+    metalice_title = get_hash_opt(:metalice_title, args)
+    case metalice_title.class.name.to_s
+    when "FalseClass"
+      # 1. false
+      title = ""
+    when "String"
+      # 2. strings
+      title = metalice_title
+    when "NilClass"
+      # 3. nil
+      title = i18n_title_use
+    when "Hash"
+      # 4. hash (auto + args)
+      title = i18n_title_use(metalice_title)
+    else
+      # 5. etc...
+      title = i18n_title_use
+    end
+    { :title => title }
+  end
+
+  # =======================
+  # 使用 I18n 的 title 設定
+  def i18n_title_use(meta_title_hash = {})
+    I18n.t "#{i18n_title_prefix}.#{meta_use_method_name('.')}", { :default => :"#{i18n_title_default}" }.merge(meta_title_hash)
+  end
+
+  def i18n_title_default
+    "#{i18n_title_prefix}.default"
+  end
+
+  def i18n_title_prefix
+    "metalice.title"
+  end
+
+  # =======================
   # 對應 method 前綴詞
   def meta_use_method_prefix
     "meta_for"
@@ -21,28 +86,35 @@ module Metalice
   # 使用的 method_name 組合結構
   # 對應 method 有優先權
   # EX:
-  #   1. Admin::FlagsController#show => meta_for_admin_flags_show
-  #   2. Admin::FlagsController#show => meta_for_admin_flags
-  #   3. Admin::FlagsController#show => meta_for_admin
+  #   1.    Admin::FlagsController#show => meta_for_admin_flags_show
+  #   2.    Admin::FlagsController#show => meta_for_admin_flags
+  #   3.    Admin::FlagsController#show => meta_for_admin
+  #   miss. Admin::FlagsController#show => meta_for_method_miss
   def meta_select_method_name
-    Selector.priority MetaTagHelper, meta_use_method_name, { prefix_word: meta_use_method_prefix }
+    Selector.priority MetaliceHelper, meta_use_method_name, { prefix_word: meta_use_method_prefix }
   end
 
-  # 排除 render
-  # - 使用 partial 的情況
-  def render_except(args)
-    return true if args[0].class.name == "String"
-    !(args.present? ? args.at(0)[:partial].present? : false)
+  # =======================
+  def block_list
+    []
+  end
+
+  def block_check?
+    block_list.each do |b|
+      return true if b =~ meta_use_method_name
+    end
+    false
   end
 
   # =======================
   # meta結構
-  def default_meta_makeup
+  def organization_meta_makeup
     {
       title: nil,
       description: nil,
       keywords: nil,
       site: nil,
+      icon: nil,
       og: {
         title: nil,
         description: nil,
@@ -64,14 +136,19 @@ module Metalice
   def set_meta(data = {})
     meta = {}
     meta[:url] ||= url_for(params.merge(:host => Setting.host))
-    meta[:title] ||= data.fetch(:title, page_title_use)
+    meta[:title] ||= data.fetch(:title, "")
     meta[:og] = {}
     meta[:og][:url] ||= data.fetch(:og_url, "")
     meta[:og][:title] ||= data.fetch(:og_title, "")
     meta[:og][:description] ||= data.fetch(:og_description, "")
     meta[:og][:image] ||= data.fetch(:og_image, "")
+    self.set_meta_tags organization_meta_makeup.deep_merge(meta)
+  end
 
-    set_meta_tags default_meta_makeup.deep_merge(meta)
+  # =======================
+  # 由 ORM 直接取出
+  def metalice_get(ref, meta_hash = {})
+    meta_hash.inject({}){ | h, (k, v) |  h[k] = ref.try(v); h }.compact
   end
 
   # =======================
@@ -108,18 +185,16 @@ module Metalice
   end
 
   # =======================
-  # 使用 I18n 的 title 設定
-  def page_title_use
-    I18n.t "title.#{meta_use_method_name('.')}", { :default => :"title.default" }
-  end
-
-  # =======================
   # 沒設定的頁面用這個 & 基礎資料
   def meta_for_default
     {
       og_description: "",
       og_image: "",
     }
+  end
+
+  def meta_for_method_miss
+    meta_for_default
   end
 
 end
