@@ -17,16 +17,9 @@
 module MetaliceHelper
   include Metalice
 
-  # =======================
-  # TODO
-  # def render(*args)
-  #   super
-  # end
-
-  def respond_with(*args)
-    metalice_perform(args) if Metalice.perform_method.to_s == __method__ || Metalice.perform_method.nil?
-    super
-  end
+  perform_method "respond_with"
+  # or
+  # perform_method "render"
 
   # =======================
   def block_list

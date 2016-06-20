@@ -7,9 +7,13 @@ module Metalice
     attr_accessor :perform_method
   end
 
-  # =======================
+  def respond_with(__method__, *args)
+    metalice_perform(__method__, args)
+    super
+  end
 
-  def metalice_perform(*args)
+  # =======================
+  def metalice_perform(call_method, args)
     meta_hash ||= {}
     meta_hash.merge! use_metalice_meta(args)
     meta_hash.merge! use_metalice_title(args)
@@ -17,8 +21,13 @@ module Metalice
   end
 
   # =======================
+  def has_partial?(args)
+    get_hash_opt(:partial, args)
+  end
+
+  # =======================
   def get_hash_opt(get_name_arg, args)
-    args.last.class.name == "Hash" ? args.last.fetch(get_name_arg, nil) : nil
+    args.last.kind_of?(Hash) ? args.last[get_name_arg] : false
   end
 
   # =======================
